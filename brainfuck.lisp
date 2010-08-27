@@ -1,4 +1,8 @@
 ;;;; brainfuck.lisp
+;;;; .polyvalent.org
+;;;; michael simpson
+;;;;
+;;;; bsd-license. have fun!
 
 (defpackage #:brainfuck
   (:use #:cl))
@@ -6,89 +10,96 @@
 (in-package #:brainfuck)
 
 (defparameter index 0)
-(defparameter value 0)
 (defparameter ptr '(0))
-(defparameter *code* '())
+(defparameter *code* "")
 
-
-(defmacro times (index &rest body)
-  `(loop for i from 0 to ,index do (,@body)))
-
-(defun bf-read (stream char arg)
-  (declare (ignore char arg))
-  (format t "~A" (sec (read-delimited-list #\] stream))))
-
-(set-dispatch-macro-character #\# #\[ #'bf-read)
-(set-macro-character #\] (get-macro-character #\) ))
-(set-macro-character #\. (format t "\."))
-(set-macro-character #\, (format t "\,"))
+(defun set-reader-macro ()
+    (set-macro-character #\] (get-macro-character #\) ))
+  (defun bf-read (stream char arg)
+    (declare (ignore char arg))
+    (read-delimited-list #\] stream t))
+  (set-dispatch-macro-character #\# #\[ #'bf-read))
 
 (let ((reader)) 
+  (set-reader-macro)
   (defun main ()
     (format t "~A " "/>>")
     (setq reader (read))
-    (brainfuck-to-lisp reader)
+    (brainfuck-reader reader)
     (main)))
 
-(defun brainfuck-to-lisp (c)
-  (case c
-    (+ (bf+))
-    (- (bf-))
-    (> (bf>))
-    (< (bf<))
-    (\. (bf\.))
-    (\, (progn
-          ;; 2nd ptr as continuation?
-          (format t "~A => ~A" ptr ptr)
-          ;; <begin/cc>
-          (bf\,)
-          ;; <end/cc> this changes the value of ptr
-          ))
+(defun brainfuck-reader (input)
+  (cond
+    ((stringp input) (bf-read-string input))
+    ((typep input 'symbol) (bf-read-char input)))
+  (setf index 0))
+
+;(let ((string (loop for char across string collect char)))
+(defun bf-read-string (string)
+  (loop for c on `,(coerce string 'list) do (bf-read-char (car c))))
+
+(defun bf-read-char (char)
+  (case char
+    (#\+ (funcall #'bf+))
+    (#\- (funcall #'bf-))
+    (#\> (bf>))
+    (#\< (bf<))
+    (#\. (funcall #'bf\.))
+    (#\, (funcall #'bf\,))
     (ptr (format t "=> ~A~%" ptr))
+    (code (format t "=> ~A~%" *code*))
+    (index (format t "=> ~A~%" index))
+    (zero (bf-zero))
+    (clear (bf-zero))
+    (quit (error "You quit deliberately."))
     (otherwise (error "Not a valid BrainFuck command."))))
 
-(defun bf> ()
-  (setf *code* (reverse *code*))
-  (push #\> *code*)
-  (setf *code* (reverse *code*))
+(defun record-to-*code* (c)
+  (setf *code* (concatenate 'string *code* (string c))))
+
+(defun add-cell ()
   (setf ptr (reverse ptr))
-  (push value ptr)
-  (setf ptr (reverse ptr))
+  (push 0 ptr)
   (incf index)
+  (setf ptr (reverse ptr)))
+
+(defun pop-cell ()
+  (setf ptr (reverse ptr))
+  (pop ptr)
+  (setf ptr (reverse ptr)))
+
+(defun bf> ()
+  (add-cell)
+  (record-to-*code* #\>)
   (nth index ptr))
 
 (defun bf< ()
-  (setf *code* (reverse *code*))
-  (push #\< *code*)
-  (setf *code* (reverse *code*))
-  (setf ptr (reverse ptr))
-  (pop ptr)
-  (setf ptr (reverse ptr))
+  (record-to-*code* #\<)
+  (pop-cell)
   (decf index)
   (nth index ptr))
 
 (defun bf+ ()
-  (setf *code* (reverse *code*))
-  (push #\+ *code*)
-  (setf *code* (reverse *code*))
-  (incf (nth index ptr)))
+  (record-to-*code* #\+)
+  (setf (elt ptr index) (incf (elt ptr index))))
 
 (defun bf- ()
-  (setf *code* (reverse *code*))
-  (push #\- *code*)
-  (setf *code* (reverse *code*))
+  (record-to-*code* #\-)
   (decf (nth index ptr)))
 
 (defun bf\. ()
-  (setf *code* (reverse *code*))
-  (push #\. *code*)
-  (setf *code* (reverse *code*))
-  (format t "~A~%"
+  (record-to-*code* #\.)
+  (format t "=> ~A~%"
           (mapcar #'code-char (loop for i in ptr collect i))))
 
 (defun bf\, ()
+  (record-to-*code* #\,)
+  (format t "~A =>" ptr)
   (format t "~A~%"
           (mapcar #'code-char (loop for i in ptr collect i))))
 
 (defun bf-zero ()
-  (setf ptr '(0)))
+  (setf ptr '(0))
+  (setf index 0)
+  (setf *code* "")
+  (format t "=> Fresh symbols have now been initialized. Have some brainfuck.~%"))
